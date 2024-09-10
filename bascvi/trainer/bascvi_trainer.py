@@ -31,6 +31,8 @@ class BAScVITrainer(pl.LightningModule):
         callbacks_args: dict = {},
         module_name: str = "",
         class_name: str = "",
+        n_input: int = None,
+        n_batch: int = None,
     ):
         super().__init__()
         # save hyperparameters in hparams.yaml file
@@ -40,6 +42,12 @@ class BAScVITrainer(pl.LightningModule):
         self.valid_counter = 0
 
         self.model_args = model_args
+
+        if n_input is not None:
+            self.model_args["n_input"] = n_input
+        if n_batch is not None:
+            self.model_args["n_batch"] = n_batch
+            
         self.training_args = training_args
         self.callbacks_args = callbacks_args
         self.n_epochs_kl_warmup = training_args.get("n_epochs_kl_warmup")
@@ -240,7 +248,7 @@ class BAScVITrainer(pl.LightningModule):
         # # print unique soma_joinid
         # print('unique:', len(batch["soma_joinid"].unique()))
 
-        return torch.cat((z, torch.unsqueeze(batch["soma_joinid"], 1)), 1)
+        return torch.cat((z, torch.unsqueeze(batch["soma_joinid"], 1), torch.unsqueeze(batch["manual_index"], 1)), 1)
 
     def configure_optimizers(self,):
         if self.training_args.get("train_library"):

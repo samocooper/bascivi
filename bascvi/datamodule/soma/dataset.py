@@ -167,7 +167,7 @@ class TileDBSomaTorchIterDataset(IterableDataset):
                 "local_l_var": torch.tensor(local_l_var),
                 "feature_presence_mask": torch.from_numpy(self.feature_presence_matrix[sample_idx_curr, :]),
                 "soma_joinid": torch.tensor(self.soma_joinid_block[self.cell_counter], dtype=torch.float32),
-                #"barcode": self.barcode_block[self.cell_counter]
+                "manual_index": torch.tensor(self.cell_counter, dtype=torch.float32)
                 }
 
             # increment counters

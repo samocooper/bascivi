@@ -205,19 +205,20 @@ class TileDBSomaIterDataModule(pl.LightningDataModule):
         elif self.genes_to_use_hvg:
             # run hvg
             print("Running HVG with n_hvg = ", self.genes_to_use_hvg)
-            with self.soma_experiment.axis_query(
-                measurement_name="RNA", obs_query=soma.AxisQuery(coords=(None, None))
-            ) as query:
-                adata: sc.AnnData = query.to_anndata(
-                    X_name="row_raw",
-                    column_names={"obs": ["soma_joinid"], "var": ["soma_joinid", "gene"]},
-                )
-                sc.pp.filter_cells(adata, min_genes=300)
-                sc.pp.filter_genes(adata, min_cells=3)
-                sc.pp.normalize_total(adata, target_sum=1e4)
-                sc.pp.log1p(adata)
-                sc.pp.highly_variable_genes(adata, n_top_genes=self.genes_to_use_hvg)
-                self.genes_to_use = adata.var[adata.var["highly_variable"]]["soma_joinid"].values.tolist()
+            with open_soma_experiment(self.soma_experiment_uri) as soma_experiment:
+                with soma_experiment.axis_query(
+                    measurement_name="RNA", obs_query=soma.AxisQuery(coords=(None, None))
+                ) as query:
+                    adata: sc.AnnData = query.to_anndata(
+                        X_name="row_raw",
+                        column_names={"obs": ["soma_joinid"], "var": ["soma_joinid", "gene"]},
+                    )
+                    sc.pp.filter_cells(adata, min_genes=300)
+                    sc.pp.filter_genes(adata, min_cells=3)
+                    sc.pp.normalize_total(adata, target_sum=1e4)
+                    sc.pp.log1p(adata)
+                    sc.pp.highly_variable_genes(adata, n_top_genes=self.genes_to_use_hvg)
+                    self.genes_to_use = adata.var[adata.var["highly_variable"]]["soma_joinid"].values.tolist()
         else:
             # defined genes to use as overlapping
             self.genes_to_use = np.where(np.all(self.feature_presence_matrix, axis=0))[0]     
@@ -245,7 +246,7 @@ class TileDBSomaIterDataModule(pl.LightningDataModule):
             print("read cell list with length ", len(self.cells_to_use))
         else:
             print("Using all cells found in obs")
-            self.cells_to_use = self.obs_df["soma_joinid"]
+            self.cells_to_use = self.obs_df["soma_joinid"].values.tolist()
 
         self.samples_list = sorted(self.obs_df["sample_idx"].unique().tolist())
         self.num_samples = len(self.samples_list) 
@@ -255,16 +256,14 @@ class TileDBSomaIterDataModule(pl.LightningDataModule):
             self.filter_and_generate_library_calcs()
         else:
             try:
-                self.library_calcs = self.soma_experiment.ms["RNA"]["sample_library_calcs"].read().concat().to_pandas()
-                self.library_calcs = self.library_calcs.set_index("sample_idx")
+                with open_soma_experiment(self.soma_experiment_uri) as soma_experiment:
+                    self.library_calcs = soma_experiment.ms["RNA"]["sample_library_calcs"].read().concat().to_pandas()
+                    self.library_calcs = self.library_calcs.set_index("sample_idx")
             except: 
                 raise ValueError("no library calcs found, please set library calcs to true")
 
 
-
-        self.obs_df.set_index("soma_joinid")
-        self.obs_df = self.obs_df.loc[self.cells_to_use]
-        self.obs_df.reset_index()   
+        self.obs_df = self.obs_df[self.obs_df["soma_joinid"].isin(self.cells_to_use)] 
 
         # downsample
         if self.max_cells_per_sample:

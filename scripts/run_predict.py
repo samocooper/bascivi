@@ -33,13 +33,15 @@ def predict(cfg: Dict, checkpoint_path: str):
     # get default root dir from checkpoint path
     cfg["pl_trainer"]["default_root_dir"] = os.path.dirname(checkpoint_path)
 
-
     # dynamically import trainer class
     module = __import__("bascvi.trainer", globals(), locals(), [cfg["trainer_module_name"]], 0)
     EmbeddingTrainer = getattr(module, cfg["trainer_class_name"])
 
     # Load the model from checkpoint
-    model = EmbeddingTrainer.load_from_checkpoint(checkpoint_path, root_dir=cfg["pl_trainer"]["default_root_dir"])
+    checkpoint = torch.load(checkpoint_path)
+    n_input = checkpoint['state_dict']['vae.px_r'].shape[0]
+    n_batch = checkpoint['state_dict']['vae.z_encoder.encoder.Layer_0.0.weight'].shape[1] - n_input
+    model = EmbeddingTrainer.load_from_checkpoint(checkpoint_path, root_dir=cfg["pl_trainer"]["default_root_dir"], n_input=n_input, n_batch=n_batch)
 
     logger.info("Set up data module....")
     # Set the number of batches in the datamodule from the saved model
@@ -60,13 +62,13 @@ def predict(cfg: Dict, checkpoint_path: str):
     model.datamodule = datamodule
 
     # Create a Trainer instance with minimal configuration, since we're only predicting
-    trainer = Trainer(default_root_dir=cfg["pl_trainer"]["default_root_dir"])
+    trainer = Trainer(default_root_dir=cfg["pl_trainer"]["default_root_dir"], accelerator="gpu", devices=1)
 
     logger.info("--------------Embedding prediction on full dataset-------------")
     predictions = trainer.predict(model, datamodule=datamodule)
     embeddings = torch.cat(predictions, dim=0).detach().cpu().numpy()
     emb_columns = ["embedding_" + str(i) for i in range(embeddings.shape[1] - 1 )] # -1 accounts for soma_joinid 
-    embeddings_df = pd.DataFrame(data=embeddings, columns=emb_columns + ["soma_joinid"])
+    embeddings_df = pd.DataFrame(data=embeddings, columns=emb_columns + ["soma_joinid"] + ["manual_index"])
     
     # logger.info("--------------------------Run UMAP----------------------------")
     # if embeddings_df.shape[0] > 500000:
@@ -78,8 +80,11 @@ def predict(cfg: Dict, checkpoint_path: str):
     logger.info("-----------------------Save Embeddings------------------------")
     with open_soma_experiment(datamodule.soma_experiment_uri) as soma_experiment:
         obs_df = soma_experiment.obs.read(
-                            column_names=("soma_joinid", "barcode", "standard_true_celltype", "authors_celltype", "cell_type_pred", "cell_subtype_pred", "sample_name", "study_name"),
+                            column_names=("soma_joinid", "barcode", "standard_true_celltype", "authors_celltype", "cell_type_pred", "cell_subtype_pred", "sample_name", "study_name", "nnz"),
                         ).concat().to_pandas()
+        
+        obs_df = obs_df[obs_df["nnz"] > 300]
+        # merge the embeddings with the soma join id
         embeddings_df = embeddings_df.set_index("soma_joinid").join(obs_df.set_index("soma_joinid"))
 
     save_path = os.path.join(os.path.dirname(checkpoint_path), "pred_embeddings_" + os.path.splitext(os.path.basename(checkpoint_path))[0] + ".tsv")
