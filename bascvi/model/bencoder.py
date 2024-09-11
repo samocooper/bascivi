@@ -94,13 +94,13 @@ class BEncoder(nn.Module):
         3-tuple of :py:class:`torch.Tensor`
             tensors of shape ``(n_latent,)`` for mean and var, and sample
         """
-
         for layer in self.encoder:
             x = torch.cat((x, batch_emb-batch_emb), dim=-1)
             x = layer(x)
 
         x = self.b_encoder(x)
         x_pred = x
+        
         # Parameters for latent distribution
         q = x
         q_m = self.mean_encoder(q)

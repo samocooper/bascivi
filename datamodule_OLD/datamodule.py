@@ -13,8 +13,8 @@ import anndata
 import pickle
 import numpy as np
 
-from datamodule.adata_utils import setup_anndata
-from datamodule.dataset import ScRNASeqTorchDataset
+from datamodule_OLD.adata_utils import setup_anndata
+from datamodule_OLD.dataset import ScRNASeqTorchDataset
 
 
 class ScRNASeqDataModule(pl.LightningDataModule):

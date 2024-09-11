@@ -8,11 +8,11 @@ import pandas as pd
 from pytorch_lightning import Trainer
 import torch
 
-from bascvi.datamodule import TileDBSomaIterDataModule, AnnDataDataModule, EmbDatamodule
+from datamodule import TileDBSomaIterDataModule, AnnDataDataModule, EmbDatamodule
 
 from bascvi.utils.utils import umap_calc_and_save_html
 
-from bascvi.datamodule.soma.soma_helpers import open_soma_experiment
+from datamodule.soma.soma_helpers import open_soma_experiment
 
 logger = logging.getLogger("pytorch_lightning")
 

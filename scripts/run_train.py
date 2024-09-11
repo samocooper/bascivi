@@ -9,15 +9,14 @@ from pytorch_lightning import Trainer
 import torch
 
 from bascvi.datamodule import TileDBSomaIterDataModule, AnnDataDataModule, EmbDatamodule
-from bascvi.utils.utils import umap_calc_and_save_html
-
 from bascvi.datamodule.soma.soma_helpers import open_soma_experiment
+
+from bascvi.utils.utils import umap_calc_and_save_html
 
 from pytorch_lightning.loggers import WandbLogger
 
 
 logger = logging.getLogger("pytorch_lightning")
-
 
 
 def train(cfg: Dict):
@@ -35,6 +34,15 @@ def train(cfg: Dict):
                 f'"{torch.multiprocessing.get_start_method()}" to "spawn"'
             )
         torch.multiprocessing.set_start_method("spawn", force=True)
+
+    # check to see if the default root dir is set in the config
+    if not cfg.get("pl_trainer", {}).get("default_root_dir"):
+        raise ValueError("default_root_dir not set in the config file")
+    
+    # make sure the root dir exists
+    if not os.path.exists(cfg["pl_trainer"]["default_root_dir"]):
+        os.makedirs(cfg["pl_trainer"]["default_root_dir"])
+    
 
 
     if cfg["datamodule_class_name"] == "TileDBSomaIterDataModule":

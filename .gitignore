@@ -179,3 +179,4 @@ Privacy
 *.pickle
 *.pkl
 *.csv
+wandb

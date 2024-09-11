@@ -4,9 +4,9 @@ import torch.nn as nn
 from torch.distributions import kl_divergence as kl
 from torch.distributions import Normal
 
-from model.decoder import Decoder
-from model.encoder import Encoder
-from model.distributions import ZeroInflatedNegativeBinomial
+from bascvi.model.decoder import Decoder
+from bascvi.model.encoder import Encoder
+from bascvi.model.distributions import ZeroInflatedNegativeBinomial
 
 
 class ScVI(nn.Module):
