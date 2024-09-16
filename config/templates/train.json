@@ -1,0 +1,63 @@
+{
+    "mode": "train",
+
+    "run_save_dir": "./runs/scref_train/",
+    
+    "datamodule": {
+        "class_name": "TileDBSomaIterDataModule",
+        "options": {
+            "soma_experiment_uri": "s3://pai-scrnaseq/sctx_gui/corpora/scref_ml/",
+            "genes_to_use_path": "/home/ubuntu/ml/bascvi/data/genes_2ksamples_10cells.txt",
+            "block_size": 50000,
+            "calc_library": false,
+            "dataloader_args": {
+                "batch_size": 64,
+                "num_workers": 2,
+                "pin_memory": true
+            },
+            "max_cells_per_sample": 100
+        }
+    },
+    "emb_trainer": {
+        "module_name": "bascvi",
+        "class_name": "BAScVI",
+        "model_args": {
+            "n_hidden": 512,
+            "n_latent": 10,
+            "n_layers": 4,
+            "scaling_factor": 1.0,
+            "init_weights": false,
+            "use_library": true,
+            "use_batch_encoder": true
+        },
+        "training_args": {
+            "n_epochs_discriminator_warmup": 5,
+            "disc_loss_weight": 1000.0,
+            "kl_loss_weight": 1.0,
+            "lr_scheduler_metric": "train_loss",
+            "save_validation_umaps": false,
+            "optimizer": {
+                "lr": 0.0001,
+                "weight_decay": 1e-6,
+                "eps": 0.01
+            },
+            "step_lr_scheduler": {
+                "step_size": 100,
+                "gamma": 0.1
+            },
+            "train_library": true,
+            "train_adversarial": true
+        },
+        "callbacks_args": {
+            "model_checkpoint": {
+                "monitor": "val_loss",
+                "mode": "min"
+            },
+            "early_stopping": {
+                "monitor": "val_loss",
+                "patience": 5,
+                "mode": "min"
+            }
+        }
+    }
+}

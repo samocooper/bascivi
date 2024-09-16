@@ -251,6 +251,13 @@ class TileDBSomaIterDataModule(pl.LightningDataModule):
             # get indices of genes in genes_to_use
             self.pretrained_gene_indices = [self.pretrained_gene_list.index(gene) for gene in self.gene_list]
 
+            self.num_genes = len(self.pretrained_gene_list)
+
+            print("pretrained gene indices: ", len(self.pretrained_gene_indices))
+            print("genes to use: ", len(self.gene_list))
+            print("pretrained gene list: ", len(self.pretrained_gene_list))
+            print("max gene index: ", max(self.pretrained_gene_indices))
+
         else:
             # get gene names and sort ids by gene name
             self.var_df_sub = self.var_df[self.var_df["soma_joinid"].isin(self.genes_to_use)]
@@ -260,6 +267,8 @@ class TileDBSomaIterDataModule(pl.LightningDataModule):
             self.genes_to_use = self.var_df_sub["soma_joinid"].values.tolist()
 
             self.pretrained_gene_indices = None
+
+            self.num_genes = len(self.genes_to_use)
 
 
         self.feature_presence_matrix = self.feature_presence_matrix[:, self.genes_to_use]
@@ -334,7 +343,7 @@ class TileDBSomaIterDataModule(pl.LightningDataModule):
             self.dataloader_args['num_workers'] = self.num_total_blocks
 
      
-        self.num_genes = len(self.genes_to_use)
+
         self.num_cells = self.obs_df.shape[0]
         
         print('# Blocks: ', self.num_total_blocks)

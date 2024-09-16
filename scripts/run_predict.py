@@ -29,13 +29,17 @@ def predict(config: Dict):
     # Load the model from checkpoint
     checkpoint = torch.load(config["pretrained_model_path"])
     if "gene_list" not in checkpoint['hyper_parameters']:
-        with open(config["datamodule"]["options"]["genes_to_use_path"], 'rb') as f:
-            pretrained_gene_list = pickle.load(f)
+        with open("/home/ubuntu/paper_repo/bascvi/checkpoints/paper/gene_list_30.txt", 'r') as f:
+            pretrained_gene_list = f.read().split(",\n")
+            # strip the quotes
+            pretrained_gene_list = [gene.strip('"') for gene in pretrained_gene_list]
+            print(pretrained_gene_list[:5])
+            
         #raise ValueError("Pretrained model must have a 'gene_list' key in hyper_parameters")
     else:
         pretrained_gene_list = checkpoint['hyper_parameters']['gene_list']
     n_input = checkpoint['state_dict']['vae.px_r'].shape[0]
-    assert n_input == len(pretrained_gene_list), "Number of genes in the model does not match the gene list"
+    assert n_input == len(pretrained_gene_list), f"Number of genes in the model {n_input} does not match the gene list length {len(pretrained_gene_list)}"
     n_batch = checkpoint['state_dict']['vae.z_encoder.encoder.Layer_0.0.weight'].shape[1] - n_input
     model = EmbeddingTrainer.load_from_checkpoint(config["pretrained_model_path"], root_dir=config["run_save_dir"], n_input=n_input, n_batch=n_batch)
 
