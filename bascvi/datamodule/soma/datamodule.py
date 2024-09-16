@@ -343,7 +343,6 @@ class TileDBSomaIterDataModule(pl.LightningDataModule):
             self.dataloader_args['num_workers'] = self.num_total_blocks
 
      
-
         self.num_cells = self.obs_df.shape[0]
         
         print('# Blocks: ', self.num_total_blocks)
