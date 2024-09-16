@@ -4,70 +4,73 @@ from typing import Dict
 import logging
 import json
 import pandas as pd
+import pickle
 
 from pytorch_lightning import Trainer
 import torch
 
-from datamodule import TileDBSomaIterDataModule, AnnDataDataModule, EmbDatamodule
+from bascvi.datamodule import TileDBSomaIterDataModule, AnnDataDataModule, EmbDatamodule
 
-from bascvi.utils.utils import umap_calc_and_save_html
-
-from datamodule.soma.soma_helpers import open_soma_experiment
+from bascvi.datamodule.soma.soma_helpers import open_soma_experiment
 
 logger = logging.getLogger("pytorch_lightning")
 
-def predict(cfg: Dict, checkpoint_path: str):
+def predict(config: Dict):
 
-    # for tiledb
-    torch.multiprocessing.set_start_method("fork", force=True)
-    orig_start_method = torch.multiprocessing.get_start_method()
-    if orig_start_method != "spawn":
-        if orig_start_method:
-            print(
-                "switching torch multiprocessing start method from "
-                f'"{torch.multiprocessing.get_start_method()}" to "spawn"'
-            )
-        torch.multiprocessing.set_start_method("spawn", force=True)
+    logger.info("--------------Loading model from checkpoint-------------")
 
-
-    # get default root dir from checkpoint path
-    cfg["pl_trainer"]["default_root_dir"] = os.path.dirname(checkpoint_path)
-
+    if "pretrained_model_path" not in config:
+        raise ValueError("Config must have a 'pretrained_model_path' key in predict mode")
 
     # dynamically import trainer class
-    module = __import__("bascvi.trainer", globals(), locals(), [cfg["trainer_module_name"]], 0)
-    EmbeddingTrainer = getattr(module, cfg["trainer_class_name"])
+    module = __import__("bascvi.trainer", globals(), locals(), [config["trainer_module_name"] if "trainer_module_name" in config else "bascvi_trainer"], 0)
+    EmbeddingTrainer = getattr(module, config["trainer_class_name"] if "trainer_class_name" in config else "BAScVITrainer")
 
     # Load the model from checkpoint
-    model = EmbeddingTrainer.load_from_checkpoint(checkpoint_path, root_dir=cfg["pl_trainer"]["default_root_dir"])
+    checkpoint = torch.load(config["pretrained_model_path"])
+    if "gene_list" not in checkpoint['hyper_parameters']:
+        with open(config["datamodule"]["options"]["genes_to_use_path"], 'rb') as f:
+            pretrained_gene_list = pickle.load(f)
+        #raise ValueError("Pretrained model must have a 'gene_list' key in hyper_parameters")
+    else:
+        pretrained_gene_list = checkpoint['hyper_parameters']['gene_list']
+    n_input = checkpoint['state_dict']['vae.px_r'].shape[0]
+    assert n_input == len(pretrained_gene_list), "Number of genes in the model does not match the gene list"
+    n_batch = checkpoint['state_dict']['vae.z_encoder.encoder.Layer_0.0.weight'].shape[1] - n_input
+    model = EmbeddingTrainer.load_from_checkpoint(config["pretrained_model_path"], root_dir=config["run_save_dir"], n_input=n_input, n_batch=n_batch)
 
-    logger.info("Set up data module....")
+    logger.info("--------------Setting up data module--------------")
+    # Set the gene list in the datamodule from the saved model
+    config["datamodule"]["options"]["pretrained_gene_list"] = pretrained_gene_list
     # Set the number of batches in the datamodule from the saved model
-    cfg["datamodule"]["pretrained_batch_size"] = model.model_args.get("n_batch", None)
+    config["datamodule"]["options"]["pretrained_batch_size"] = model.model_args.get("n_batch", None)
 
-    if cfg["datamodule_class_name"] == "TileDBSomaIterDataModule":
-        cfg["datamodule"]["root_dir"] = cfg["pl_trainer"]["default_root_dir"]
-        datamodule = TileDBSomaIterDataModule(**cfg["datamodule"])
+    if "class_name" not in config["datamodule"]:
+        config["datamodule"]["class_name"] = "TileDBSomaIterDataModule"
 
-    elif cfg["datamodule_class_name"] == "EmbDatamodule":
-        datamodule = EmbDatamodule(**cfg["datamodule"])
+    if config["datamodule"]["class_name"] == "TileDBSomaIterDataModule":
+        config["datamodule"]["options"]["root_dir"] = config["run_save_dir"]
+        datamodule = TileDBSomaIterDataModule(**config["datamodule"]["options"])
 
-    elif cfg["datamodule_class_name"] == "AnnDataDataModule":
-        datamodule = AnnDataDataModule(**cfg["datamodule"])
+    elif config["datamodule"]["class_name"] == "EmbDatamodule":
+        datamodule = EmbDatamodule(**config["datamodule"]["options"])
+
+    elif config["datamodule"]["class_name"] == "AnnDataDataModule":
+        datamodule = AnnDataDataModule(**config["datamodule"]["options"])
 
     datamodule.setup(stage="predict")
 
     model.datamodule = datamodule
 
     # Create a Trainer instance with minimal configuration, since we're only predicting
-    trainer = Trainer(default_root_dir=cfg["pl_trainer"]["default_root_dir"])
+    trainer = Trainer(default_root_dir=config["run_save_dir"], accelerator="auto")
 
     logger.info("--------------Embedding prediction on full dataset-------------")
     predictions = trainer.predict(model, datamodule=datamodule)
     embeddings = torch.cat(predictions, dim=0).detach().cpu().numpy()
-    emb_columns = ["embedding_" + str(i) for i in range(embeddings.shape[1] - 1 )] # -1 accounts for soma_joinid 
-    embeddings_df = pd.DataFrame(data=embeddings, columns=emb_columns + ["soma_joinid"])
-    
+    emb_columns = ["embedding_" + str(i) for i in range(embeddings.shape[1] - 2 )] # -2 accounts for soma_joinid and cell_idx
+    embeddings_df = pd.DataFrame(data=embeddings, columns=emb_columns + ["soma_joinid"] + ["cell_idx"])
+
     # logger.info("--------------------------Run UMAP----------------------------")
     # if embeddings_df.shape[0] > 500000:
     #     logger.info("Too many embeddings to calculate UMAP, skipping....")
@@ -76,13 +79,17 @@ def predict(cfg: Dict, checkpoint_path: str):
     #     embeddings_df = umap_calc_and_save_html(embeddings_df, emb_columns, trainer.default_root_dir)
     
     logger.info("-----------------------Save Embeddings------------------------")
-    with open_soma_experiment(datamodule.soma_experiment_uri) as soma_experiment:
-        obs_df = soma_experiment.obs.read(
-                            column_names=("soma_joinid", "barcode", "standard_true_celltype", "authors_celltype", "cell_type_pred", "cell_subtype_pred", "sample_name", "study_name"),
-                        ).concat().to_pandas()
-        embeddings_df = embeddings_df.set_index("soma_joinid").join(obs_df.set_index("soma_joinid"))
+    if config["datamodule"]["class_name"] in ["TileDBSomaIterDataModule", "EmbDatamodule"]:
 
-    save_path = os.path.join(os.path.dirname(checkpoint_path), "pred_embeddings_" + os.path.splitext(os.path.basename(checkpoint_path))[0] + ".tsv")
+        with open_soma_experiment(datamodule.soma_experiment_uri) as soma_experiment:
+            obs_df = soma_experiment.obs.read(
+                                column_names=("soma_joinid", "barcode", "standard_true_celltype", "authors_celltype", "cell_type_pred", "cell_subtype_pred", "sample_name", "study_name", "batch_name"),
+                            ).concat().to_pandas()
+                        
+            # merge the embeddings with the soma join id
+            embeddings_df = embeddings_df.set_index("soma_joinid").join(obs_df.set_index("soma_joinid"))
+
+    save_path = os.path.join(config["run_save_dir"], "pred_embeddings_" + os.path.splitext(os.path.basename(config["pretrained_model_path"]))[0] + ".tsv")
     embeddings_df.to_csv(save_path, sep="\t")
     logger.info(f"Saved predicted embeddings to: {save_path}")
 

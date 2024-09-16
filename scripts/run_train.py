@@ -9,9 +9,9 @@ from pytorch_lightning import Trainer
 import torch
 
 from bascvi.datamodule import TileDBSomaIterDataModule, AnnDataDataModule, EmbDatamodule
-from bascvi.datamodule.soma.soma_helpers import open_soma_experiment
-
 from bascvi.utils.utils import umap_calc_and_save_html
+
+from bascvi.datamodule.soma.soma_helpers import open_soma_experiment
 
 from pytorch_lightning.loggers import WandbLogger
 
@@ -19,10 +19,11 @@ from pytorch_lightning.loggers import WandbLogger
 logger = logging.getLogger("pytorch_lightning")
 
 
-def train(cfg: Dict):
+
+def train(config: Dict):
 
     # Initialize Wandb Logger
-    wandb_logger = WandbLogger(project="bascvi", log_model="all")
+    wandb_logger = WandbLogger(project="bascvi", save_dir=config["run_save_dir"])
 
     # for tiledb
     torch.multiprocessing.set_start_method("fork", force=True)
@@ -35,55 +36,51 @@ def train(cfg: Dict):
             )
         torch.multiprocessing.set_start_method("spawn", force=True)
 
-    # check to see if the default root dir is set in the config
-    if not cfg.get("pl_trainer", {}).get("default_root_dir"):
-        raise ValueError("default_root_dir not set in the config file")
-    
-    # make sure the root dir exists
-    if not os.path.exists(cfg["pl_trainer"]["default_root_dir"]):
-        os.makedirs(cfg["pl_trainer"]["default_root_dir"])
-    
 
+    if config["datamodule"]["class_name"] == "TileDBSomaIterDataModule":
+        config["datamodule"]["options"]["root_dir"] = config["run_save_dir"]
+        datamodule = TileDBSomaIterDataModule(**config["datamodule"]["options"])
 
-    if cfg["datamodule_class_name"] == "TileDBSomaIterDataModule":
-        cfg["datamodule"]["root_dir"] = cfg["pl_trainer"]["default_root_dir"]
-        datamodule = TileDBSomaIterDataModule(**cfg["datamodule"])
+    elif config["datamodule"]["class_name"] == "EmbDatamodule":
+        datamodule = EmbDatamodule(**config["datamodule"]["options"])
 
-    elif cfg["datamodule_class_name"] == "EmbDatamodule":
-        datamodule = EmbDatamodule(**cfg["datamodule"])
-
-    elif cfg["datamodule_class_name"] == "AnnDataDataModule":
+    elif config["datamodule"]["class_name"] == "AnnDataDataModule":
         raise NotImplementedError("Training with AnnDataDataModule is not implemented yet")
-        datamodule = AnnDataDataModule(**cfg["datamodule"])
+        datamodule = AnnDataDataModule(**config["datamodule"]["options"])
 
     datamodule.setup()
 
+    # set the model gene list from the datamodule
+    config['emb_trainer']['gene_list'] = datamodule.gene_list
+
     # set the number of input genes and batches in the model from the datamodule
-    cfg['emb_trainer']['model_args']['n_input'] = datamodule.num_genes
-    cfg['emb_trainer']['model_args']['n_batch'] = datamodule.num_batches
+    config['emb_trainer']['model_args']['n_input'] = datamodule.num_genes
+    config['emb_trainer']['model_args']['n_batch'] = datamodule.num_batches
 
     # dynamically import trainer class
-    module = __import__("bascvi.trainer", globals(), locals(), [cfg["trainer_module_name"]], 0)
-    EmbeddingTrainer = getattr(module, cfg["trainer_class_name"])
+    module = __import__("bascvi.trainer", globals(), locals(), [config["trainer_module_name"] if "trainer_module_name" in config else "bascvi_trainer"], 0)
+    EmbeddingTrainer = getattr(module, config["trainer_class_name"] if "trainer_class_name" in config else "BAScVITrainer")
 
-    if cfg.get("load_from_checkpoint"):
+    if config.get("load_from_checkpoint"):
         logger.info(f"Loading trainer from checkpoint.....")
         model = EmbeddingTrainer.load_from_checkpoint(
-            cfg["load_from_checkpoint"], 
+            config["load_from_checkpoint"], 
             )
     else:
         logger.info(f"Initializing Custom Embedding Trainer.....")
         model = EmbeddingTrainer(
-            cfg["pl_trainer"]["default_root_dir"],
-            **cfg["emb_trainer"]
+            config["run_save_dir"],
+            **config["emb_trainer"]
             )
     # add callbacks to pytroch lightning trainer config
-    cfg["pl_trainer"]["callbacks"] = model.callbacks
+    if "pl_trainer" not in config:
+        config["pl_trainer"] = {}
+    config["pl_trainer"]["callbacks"] = model.callbacks
 
     model.datamodule = datamodule
 
     # logger.info(f"Initializing pytorch-lightning trainer.....")
-    trainer = Trainer(**cfg["pl_trainer"], logger=wandb_logger)  # `Trainer(accelerator='gpu', devices=1)`
+    trainer = Trainer(**config["pl_trainer"], logger=wandb_logger, accelerator="auto")
     #trainer.save_checkpoint("latest.ckpt")
 
     # logger.addHandler(logging.FileHandler(os.path.join(cfg["datamodule"]["root_dir"], "std.log")))
@@ -101,11 +98,11 @@ def train(cfg: Dict):
     logger.info("--------------Embedding prediction on full dataset-------------")
 
 
-    if cfg["datamodule_class_name"] == "TileDBSomaIterDataModule":
-        cfg["datamodule"]["root_dir"] = cfg["pl_trainer"]["default_root_dir"]
-        datamodule = TileDBSomaIterDataModule(**cfg["datamodule"])
-    elif cfg["datamodule_class_name"] == "EmbDatamodule":
-        datamodule = EmbDatamodule(**cfg["datamodule"])
+    # if config["datamodule_class_name"] == "TileDBSomaIterDataModule":
+    #     config["datamodule"]["root_dir"] = cfg["run_save_dir"]
+    #     datamodule = TileDBSomaIterDataModule(**cfg["datamodule"])
+    # elif config["datamodule_class_name"] == "EmbDatamodule":
+    #     datamodule = EmbDatamodule(**cfg["datamodule"])
 
     datamodule.pretrained_batch_size = cfg['emb_trainer']['model_args']['n_batch']
     datamodule.setup(stage="predict")
@@ -124,9 +121,9 @@ def train(cfg: Dict):
     obs_df
     embeddings_df = embeddings_df.set_index("soma_joinid").join(obs_df.set_index("soma_joinid"))
     
-    embeddings_df, fig_save_dict = umap_calc_and_save_html(embeddings_df, emb_columns, trainer.default_root_dir)
+    # embeddings_df, fig_save_dict = umap_calc_and_save_html(embeddings_df, emb_columns, trainer.default_root_dir)
 
-    save_path = os.path.join(os.path.dirname(trainer.checkpoint_callback.best_model_path), "pred_embeddings_" + os.path.splitext(os.path.basename(trainer.checkpoint_callback.best_model_path))[0] + ".tsv")
+    save_path = os.path.join(os.path.dirname(cfg["run_save_dir"]), "pred_embeddings_" + os.path.splitext(os.path.basename(trainer.checkpoint_callback.best_model_path))[0] + ".tsv")
     embeddings_df.to_csv(save_path, sep="\t")
     logger.info(f"Saved predicted embeddings to: {save_path}")
 
