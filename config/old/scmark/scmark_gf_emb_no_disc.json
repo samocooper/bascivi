@@ -1,40 +1,44 @@
 {
+    "datamodule_class_name": "EmbDatamodule",
+
     "datamodule": {
-        "data_dir": "./data/downsample_10000/train/",
-        "data_save": "./data/downsample_10000",
-        "batch_keys": [],
-        "dataset_args": {
-            "compute_lib_size": true
-        },
+        "emb_path": "~/geneformer_eval/scmark_eval/results/scmark_zero_shot_umap.csv",
+        "num_dims": 512,
+        "soma_experiment_uri": "/home/ubuntu/large-bascivi/data/scmark",
+     
+        "cells_to_use_path": "/home/ubuntu/large-bascivi/soma_joinids_scmark_no_wu.pkl",
         "dataloader_args": {
             "batch_size": 64,
-            "shuffle": true,
-            "num_workers": 16,
+            "num_workers": 8,
             "pin_memory": true,
             "drop_last": false
         }
     },
+    "load_from_checkpoint": false,
     "trainer_module_name": "bascvi_trainer",
     "trainer_class_name": "BAScVITrainer",
     "emb_trainer": {
-        "module_name": "scvi",
-        "class_name": "ScVI",
+        "module_name": "bascvi",
+        "class_name": "BAScVI",
         "model_args": {
-            "n_hidden": 512,
+            "n_hidden": 128,
             "n_latent": 10,
             "n_layers": 3,
             "dropout_rate": 0.1,
             "log_variational": false,
-            "normalize_total": true,
+            "normalize_total": false,
             "scaling_factor": 1.0,
             "init_weights": false,
-            "batch_emb_dim":0,        
+            "batch_emb_dim": 10,        
             "use_library": true,
-            "use_batch_encoder": true
+            "use_batch_encoder": true,
+            "use_zinb": false
         },
         "training_args": {
-            "n_epochs_kl_warmup": 50,
-            "lr_scheduler_metric": "elbo_val",
+            "n_steps_kl_warmup": 20000,
+            "disc_loss_weight": 0,
+            "kl_loss_weight": 0.05,
+            "lr_scheduler_metric": "val_loss",
             "optimizer": {
                 "lr": 0.0001,
                 "weight_decay": 1e-6,
@@ -49,22 +53,23 @@
         },
         "callbacks_args": {
             "model_checkpoint": {
-                "monitor": "elbo_val",
+                "monitor": "val_loss",
                 "mode": "min"
             },
             "early_stopping": {
-                "monitor": "elbo_val",
+                "monitor": "val_loss",
                 "patience": 5,
                 "mode": "min"
             }
         }
     },
     "pl_trainer": {
-        "max_epochs": 3,
+        "max_epochs": 200,
         "accelerator": "gpu",
         "devices": 1,
-        "check_val_every_n_epoch": 2,
+        "check_val_every_n_epoch": 1,
         "deterministic": true,
-        "default_root_dir": "./exp_logs/template/"
+        "default_root_dir": "./exp_logs/scmark_no_wu/gf_emb_no_disc",
+        "num_sanity_val_steps": -1
     }
 }

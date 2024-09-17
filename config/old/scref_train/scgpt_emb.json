@@ -1,39 +1,44 @@
 {
+    "datamodule_class_name": "EmbDatamodule",
+
     "datamodule": {
-        "data_dir": "./data/train",
-        "data_save": "./data/temp",
-        "batch_keys": ["study_name","sample_name"],
-        "dataset_args": {
-            "compute_lib_size": true
-        },
+        "emb_path": "/home/ubuntu/scGPT/results/scref_train/zero_shot/scGPT_zero_shot_embedding.csv",
+        "num_dims": 512,
+        "soma_experiment_uri": "/home/ubuntu/bascvi/data/human_v6.0.5",
+     
+        "barcodes_to_use_path": "data/scref_train_barcodes.pkl",
         "dataloader_args": {
             "batch_size": 64,
-            "shuffle": true,
-            "num_workers": 16,
+            "num_workers": 3,
             "pin_memory": true,
             "drop_last": false
         }
     },
+    "load_from_checkpoint" : false,
     "trainer_module_name": "bascvi_trainer",
     "trainer_class_name": "BAScVITrainer",
     "emb_trainer": {
         "module_name": "bascvi",
         "class_name": "BAScVI",
         "model_args": {
-            "n_hidden": 1024,
+            "n_hidden": 128,
             "n_latent": 10,
-            "n_layers": 4,
+            "n_layers": 3,
             "dropout_rate": 0.1,
             "log_variational": false,
-            "normalize_total": true,
+            "normalize_total": false,
             "scaling_factor": 1.0,
             "init_weights": false,
-            "batch_emb_dim":0,        
+            "batch_emb_dim": 10,        
             "use_library": true,
-            "use_batch_encoder": true
+            "use_batch_encoder": true,
+            "use_zinb": false
         },
         "training_args": {
-            "n_epochs_kl_warmup": 50,
+            "n_steps_kl_warmup": 20000,
+            "n_steps_discriminator_warmup": 20000,
+            "disc_loss_weight": 1000,
+            "kl_loss_weight": 0.05,
             "lr_scheduler_metric": "val_loss",
             "optimizer": {
                 "lr": 0.0001,
@@ -60,11 +65,11 @@
         }
     },
     "pl_trainer": {
-        "max_epochs": 150,
+        "max_epochs": 200,
         "accelerator": "gpu",
         "devices": 1,
         "check_val_every_n_epoch": 1,
         "deterministic": true,
-        "default_root_dir": "./exp_logs/BaScVI_4L_Both/"
+        "num_sanity_val_steps": -1
     }
 }

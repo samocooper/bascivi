@@ -19,7 +19,6 @@ from pytorch_lightning.loggers import WandbLogger
 logger = logging.getLogger("pytorch_lightning")
 
 
-
 def train(config: Dict):
 
     # Initialize Wandb Logger
@@ -126,24 +125,3 @@ def train(config: Dict):
     save_path = os.path.join(os.path.dirname(cfg["run_save_dir"]), "pred_embeddings_" + os.path.splitext(os.path.basename(trainer.checkpoint_callback.best_model_path))[0] + ".tsv")
     embeddings_df.to_csv(save_path, sep="\t")
     logger.info(f"Saved predicted embeddings to: {save_path}")
-
-
-if __name__ == "__main__":
-
-
-    parser = ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "-c",
-        "--config",
-        help="Config file path, `./configs/train_scvi_cfg.json`",
-        type=str,
-        default="./configs/train_scvi_cfg.json",
-    )
-    args = parser.parse_args()
-
-    logger.info(f"Reading config file from location: {args.config}")
-    with open(args.config) as json_file:
-        cfg = json.load(json_file)
-
-    
-    train(cfg)
